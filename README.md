@@ -24,7 +24,7 @@ Currently, users must manually synchronize coordinates across multiple sections 
 1. Download the module:
    ```bash
    cd ~/klipper/klippy/extras
-   wget https://raw.githubusercontent.com/your-username/klipper-parametric-parser/main/parametric_parse.py
+   wget https://raw.githubusercontent.com/jmgk77/klipper_parametric_parse/refs/heads/master/parametric_parse.py
    ```
 
 2. Add to your `printer.cfg`:
