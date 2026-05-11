@@ -1,47 +1,104 @@
-Feature: Basic Arithmetic and Cross-Section Variable References in Config Parsing  
+# Klipper Parametric Parser
 
-"Stop manually calculating probe offsets for your bed screws!"
+A lightweight configuration enhancement for Klipper that enables parametric parsing with cross-section variable references and basic arithmetic expressions.
 
+## Overview
 
-"Currently, users must manually synchronize coordinates across multiple sections (e.g., matching screws_tilt_adjust to [probe] offsets). This PR introduces a lightweight, define-before-use parametric parsing layer that allows hardware constants to be defined once and referenced mathematically, improving configuration maintainability and reducing human error during hardware changes."
+Stop manually calculating probe offsets for your bed screws! This module allows you to define hardware constants once and reference them mathematically across your printer configuration, reducing errors and improving maintainability.
 
-Usage: copy parametric_parse.py to extras/ folder, and add [parametric_parse] as the first thing in your printer.cfg
+Currently, users must manually synchronize coordinates across multiple sections (e.g., matching `screws_tilt_adjust` to `[probe]` offsets). This introduces a parametric parsing layer that allows hardware constants to be defined once and referenced mathematically, improving configuration maintainability and reducing human error during hardware changes.
 
-Download the module:
+## Features
 
-Bash
-cd ~/klipper/klippy/extras
-wget https://raw.githubusercontent.com/your-username/klipper-parametric-parser/main/parametric_parse.py
-Enable in printer.cfg:
-Add the following line to the VERY TOP of your printer.cfg (before any movement or hardware sections):
+- **Cross-section references**: Reference values from any config section
+- **Arithmetic expressions**: Support for basic math operations (+, -, *, /)
+- **Conditional expressions**: Use `if-else` for dynamic calculations
+- **Comma-separated values**: Perfect for coordinate pairs
+- **Safe evaluation**: Restricted `eval()` prevents code injection
+- **Error logging**: Detailed logging for debugging
 
-Ini, TOML
-[parametric_parse]
-Restart Klipper:
+## Installation
 
-### Syntax Example
-Once enabled, you can define variables in a section and reference them elsewhere using math:
+### Method 1: Direct Download
+
+1. Download the module:
+   ```bash
+   cd ~/klipper/klippy/extras
+   wget https://raw.githubusercontent.com/your-username/klipper-parametric-parser/main/parametric_parse.py
+   ```
+
+2. Add to your `printer.cfg`:
+   ```ini
+   [parametric_parse]
+   ```
+
+3. Restart Klipper:
+   ```bash
+   sudo systemctl restart klipper
+   ```
+
+### Method 2: Manual Installation
+
+1. Copy `parametric_parse.py` to your Klipper extras directory:
+   ```bash
+   cp parametric_parse.py ~/klipper/klippy/extras/
+   ```
+
+2. Add the configuration section to the **very top** of your `printer.cfg` (before any movement or hardware sections).
+
+3. Restart Klipper to load the module.
+
+## Configuration
+
+Add the `[parametric_parse]` section at the top of your `printer.cfg`:
 
 ```ini
-[parametric_parse] 
-inject:   
-   # 1. Safe Z Home: Center of the bed minus probe offset   
-   safe_z_home.home_xy_position: (stepper_x:position_max)/2 - (bltouch:x_offset), (stepper_y:position_max)/2 - (bltouch:y_offset)    
-   # 2. Bed Mesh: Ensure the PROBE stays on the bed (0 to position_max). We add a 10mm safety margin to the physical limits.   
-   bed_mesh.mesh_min: (bltouch:x_offset) + 10 if (bltouch:x_offset) > 0 else 10, (bltouch:y_offset) + 10 if (bltouch:y_offset) > 0 else 10   
-   bed_mesh.mesh_max: (stepper_x:position_max) + (bltouch:x_offset) - 10 if (bltouch:x_offset) < 0 else (stepper_x:position_max) - 10, (stepper_y:position_max) + (bltouch:y_offset) - 10 if (bltouch:y_offset) < 0 else (stepper_y:position_max) - 10    
-   # 3. Screws Tilt Adjust: The PROBE must be over the screws   # Formula: Nozzle_Screw_Pos - Probe_Offset   
-   screws_tilt_adjust.screw1: 10 - (bltouch:x_offset), 10 - (bltouch:y_offset)   
-   screws_tilt_adjust.screw2: (stepper_x:position_max) - 10 - (bltouch:x_offset), 10 - (bltouch:y_offset)   
-   screws_tilt_adjust.screw3: (stepper_x:position_max) - 10 - (bltouch:x_offset), (stepper_y:position_max) - 10 - (bltouch:y_offset)   
-   screws_tilt_adjust.screw4: 10 - (bltouch:x_offset), (stepper_y:position_max) - 10 - (bltouch:y_offset)    
-   # 4. Bed Screws: The NOZZLE over the screws (Direct position)   
-   bed_screws.screw1: 10, 10   
-   bed_screws.screw2: (stepper_x:position_max) - 10, 10   
-   bed_screws.screw3: (stepper_x:position_max) - 10, (stepper_y:position_max) - 10   
-   bed_screws.screw4: 10, (stepper_y:position_max) - 10
+[parametric_parse]
+inject:
+   # Your parametric definitions here
+   target_section.target_option: (source_section:source_option) + 10
 ```
 
-### Installation
-Bash
-sudo systemctl restart klipper
+## Syntax
+
+### Variable References
+Reference any config value using the format: `(section:option)`
+
+**Examples:**
+- `(stepper_x:position_max)` - Reference the max position from stepper_x
+- `(bltouch:x_offset)` - Reference probe offset
+
+### Expressions
+- **Arithmetic**: `+`, `-`, `*`, `/`
+- **Conditionals**: `if condition else value`
+- **Grouping**: Use parentheses for complex expressions
+
+### Injection Format
+```
+target_section.target_option: expression1, expression2, ...
+```
+
+## Examples
+
+### Basic Arithmetic
+```ini
+[parametric_parse]
+inject:
+   safe_z_home.home_xy_position: (stepper_x:position_max)/2, (stepper_y:position_max)/2
+```
+
+### Conditional Calculations
+```ini
+[parametric_parse]
+inject:
+   bed_mesh.mesh_min: (bltouch:x_offset) + 10 if (bltouch:x_offset) > 0 else 10, (bltouch:y_offset) + 10 if (bltouch:y_offset) > 0 else 10
+```
+
+### Complex Coordinates
+```ini
+[parametric_parse]
+inject:
+   screws_tilt_adjust.screw1: 10 - (bltouch:x_offset), 10 - (bltouch:y_offset)
+   screws_tilt_adjust.screw2: (stepper_x:position_max) - 10 - (bltouch:x_offset), 10 - (bltouch:y_offset)
+```
+
