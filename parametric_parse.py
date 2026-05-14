@@ -13,11 +13,23 @@ class ParametricParse:
         # In Klipper 0.13, this is the reliable way to get the parser during __init__
         self.raw_cfg = getattr(config, 'fileconfig', None)
         
-        if self.raw_cfg and self.inject_data:
+        if self.raw_cfg:
             self.VAR_RE = re.compile(r'\(([^:)]+):([^)]+)\)')
-            self._process_injections()
-        elif not self.raw_cfg:
+            self._consume_user_variables(config)
+            if self.inject_data:
+                self._process_injections()
+        else:
             logging.error("Parametric: Could not find fileconfig in config object.")
+
+    def _consume_user_variables(self, config):
+        RESERVED = {'inject'}  # add more if you add future keywords
+        # consume all
+        for option in self.raw_cfg.options('parametric_parse'):
+            if option in RESERVED:
+                continue
+            # config.get() marks the key as consumed
+            value = config.get(option)
+            logging.info("Parametric: Registered variable [%s] = %s" % (option, value))         
 
     def _lookup(self, m):
         section, option = m.group(1).strip(), m.group(2).strip()
@@ -64,7 +76,7 @@ class ParametricParse:
                     logging.error("Parametric: Target section [%s] not found!" % target_s)
                     
             except Exception as e:
-                logging.error("Parametric Error on line [%s]: %s" % (line, str(e)))
+                logging.error("Parametric: Error on line [%s]: %s" % (line, str(e)))
 
 def load_config(config):
     return ParametricParse(config)
