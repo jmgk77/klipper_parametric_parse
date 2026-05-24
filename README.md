@@ -1,168 +1,122 @@
-# Klipper Parametric Parser
+# klipper_parametric_parse
 
-A lightweight configuration enhancement for Klipper that enables parametric parsing with cross-section variable references, user-defined variables, and basic arithmetic expressions.
+A Klipper extra that lets you use values from your `printer.cfg` — and basic math — to set other values, at config load time.
 
-## Overview
+## The problem it solves
 
-Stop manually calculating probe offsets for your bed screws! This module allows you to define hardware constants once and reference them mathematically across your printer configuration, reducing errors and improving maintainability.
+Several Klipper sections require coordinates that are derived from values defined elsewhere. For example, `screws_tilt_adjust` screw positions depend on `[probe]` offsets and axis limits. When you change a probe mount or swap hardware, you update one value and then manually recalculate and update five others. This module does those calculations for you.
 
-Currently, users must manually synchronize coordinates across multiple sections (e.g., matching `screws_tilt_adjust` to `[probe]` offsets). This introduces a parametric parsing layer that allows hardware constants to be defined once and referenced mathematically, improving configuration maintainability and reducing human error during hardware changes.
+## How it works
 
-## Features
+Add a `[parametric_parse]` section to your `printer.cfg`. Inside `inject:`, write formulas that reference any `section:option` already present in your config. The module resolves and evaluates them during `__init__`, before Klipper validates the affected sections, by writing the results directly into the live `ConfigParser` instance.
 
-- **User-defined variables**: Define your own named constants directly in `[parametric_parse]`
-- **Cross-section references**: Reference values from any config section
-- **Arithmetic expressions**: Support for basic math operations (+, -, *, /)
-- **Conditional expressions**: Use `if-else` for dynamic calculations
-- **Comma-separated values**: Perfect for coordinate pairs
-- **Safe evaluation**: Restricted `eval()` prevents code injection
-- **Error logging**: Detailed logging for debugging
+**The `[parametric_parse]` section must appear before any section it modifies.**
+
+References use the syntax `(section:option)`. The result of each formula replaces the target value as if you had typed it manually.
 
 ## Installation
 
-### Method 1: Direct Download
+```bash
+cd ~/klipper/klippy/extras
+wget https://raw.githubusercontent.com/jmgk77/klipper_parametric_parse/master/parametric_parse.py
+```
 
-1. Download the module:
-   ```bash
-   cd ~/klipper/klippy/extras
-   wget https://raw.githubusercontent.com/jmgk77/klipper_parametric_parse/refs/heads/master/parametric_parse.py
-   ```
+Then restart Klipper via the command line:
 
-2. Add to your `printer.cfg`:
-   ```ini
-   [parametric_parse]
-   ```
+```bash
+sudo systemctl restart klipper
+```
 
-3. Restart Klipper:
-   ```bash
-   sudo systemctl restart klipper
-   ```
-
-> **Important:** Always restart Klipper via the command line (`sudo systemctl restart klipper`) after editing `parametric_parse.py`. The Mainsail/Fluidd "RESTART" button only reloads the config, not the Python module itself.
-
-### Method 2: Manual Installation
-
-1. Copy `parametric_parse.py` to your Klipper extras directory:
-   ```bash
-   cp parametric_parse.py ~/klipper/klippy/extras/
-   ```
-
-2. Add the configuration section to the **very top** of your `printer.cfg` (before any movement or hardware sections).
-
-3. Restart Klipper via command line to load the module.
+> **Note:** The Mainsail/Fluidd "RESTART" button only reloads the config, not the Python module. Always use `systemctl restart klipper` after installing or updating `parametric_parse.py`.
 
 ## Configuration
-
-Add the `[parametric_parse]` section at the top of your `printer.cfg`:
 
 ```ini
 [parametric_parse]
 inject:
-   # Your parametric definitions here
-   target_section.target_option: (source_section:source_option) + 10
+    target_section.target_option: (source_section:source_option) + 10
 ```
 
-## Syntax
+### User-defined variables
 
-### User-Defined Variables
-
-You can define named constants directly inside `[parametric_parse]` and reference them in your formulas. Any key that is not `inject` is treated as a user variable.
+Any key inside `[parametric_parse]` other than `inject` is treated as a user variable and can be referenced in formulas:
 
 ```ini
 [parametric_parse]
 screw_margin: 10
-probe_safe_margin: 5
 inject:
-   bed_screws.screw1: (parametric_parse:screw_margin), (parametric_parse:screw_margin)
+    bed_screws.screw1: (parametric_parse:screw_margin), (parametric_parse:screw_margin)
 ```
 
-> **Note:** Variable names are lowercased by ConfigParser. `MyVar: 100` is stored and referenced as `myvar`.
-> **Note:** All references, including user variables, must use the `(section:option)` syntax with parentheses. Bare `section:option` without parentheses will not be resolved.
+### Syntax
 
-### Variable References
+Each inject line follows this structure:
 
-Reference any config value — including user variables — using the format: `(section:option)`
-
-**Examples:**
-- `(stepper_x:position_max)` — max position from stepper_x
-- `(bltouch:x_offset)` — probe X offset
-- `(parametric_parse:myvar)` — a user-defined variable
-
-### Expressions
-- **Arithmetic**: `+`, `-`, `*`, `/`
-- **Conditionals**: `value_if_true if condition else value_if_false`
-- **Grouping**: Use parentheses for complex expressions
-
-### Injection Format
 ```
-target_section.target_option: expression1, expression2, ...
+target_section.target_option: formula using (source_section:source_option)
 ```
 
-Each comma-separated expression produces one value in the result. Results are formatted to 3 decimal places.
+Dot notation (`section.option`) is the write target. Colon notation (`section:option`) inside parentheses is a read reference. The distinction is intentional — it makes the data flow direction unambiguous at a glance.
 
-## Examples
+| Element | Description |
+|---|---|
+| `section.option` | Write target (left-hand side) |
+| `(section:option)` | Read reference to any value in your config |
+| `+  -  *  /` | Basic arithmetic |
+| `A if condition else B` | Conditional expression (Python ternary) |
+| `value1, value2` | Comma-separated output (for coordinate pairs) |
+| `# comment` | Inline comments are supported |
 
-### User-Defined Variables
+Injection is processed **line by line, in order**. A value set in one line is immediately available to subsequent lines:
+
 ```ini
-[parametric_parse]
-bed_margin: 10
 inject:
-   bed_screws.screw1: (parametric_parse:bed_margin), (parametric_parse:bed_margin)
-   bed_screws.screw2: (stepper_x:position_max) - (parametric_parse:bed_margin), (parametric_parse:bed_margin)
+    stepper_x.position_max: 200
+    safe_z_home.home_xy_position: (stepper_x:position_max) / 2, 100
+    # home_xy_position becomes 100, 100
+    stepper_x.position_max: 100
+    bed_screws.screw1: (stepper_x:position_max) / 2, 100
+    # screw1 becomes 50, 100
 ```
 
-### Basic Arithmetic
-```ini
-[parametric_parse]
-inject:
-   safe_z_home.home_xy_position: (stepper_x:position_max)/2, (stepper_y:position_max)/2
-```
+## Example
 
-### Conditional Calculations
-```ini
-[parametric_parse]
-inject:
-   bed_mesh.mesh_min: (bltouch:x_offset) + 10 if (bltouch:x_offset) > 0 else 10, (bltouch:y_offset) + 10 if (bltouch:y_offset) > 0 else 10
-```
-
-### Complex Coordinates
-```ini
-[parametric_parse]
-inject:
-   screws_tilt_adjust.screw1: 10 - (bltouch:x_offset), 10 - (bltouch:y_offset)
-   screws_tilt_adjust.screw2: (stepper_x:position_max) - 10 - (bltouch:x_offset), 10 - (bltouch:y_offset)
-```
-
-### Full Real-World Example
+The probe name and axis names below are from a specific machine. Replace them with whatever is in your config — the module makes no assumptions about hardware.
 
 ```ini
 [parametric_parse]
-margin: 10
+safe_margin: 10
 inject:
-   # Safe Z Home: center of bed minus probe offset
-   safe_z_home.home_xy_position: (stepper_x:position_max)/2 - (bltouch:x_offset), (stepper_y:position_max)/2 - (bltouch:y_offset)
+    # Safe Z Home: center of the bed, accounting for probe offset
+    safe_z_home.home_xy_position: (stepper_x:position_max) / 2 - (bltouch:x_offset), (stepper_y:position_max) / 2 - (bltouch:y_offset)
 
-   # Bed Mesh: probe must stay on the bed, with safety margin
-   bed_mesh.mesh_min: (bltouch:x_offset) + (parametric_parse:margin) if (bltouch:x_offset) > 0 else (parametric_parse:margin), (bltouch:y_offset) + (parametric_parse:margin) if (bltouch:y_offset) > 0 else (parametric_parse:margin)
-   bed_mesh.mesh_max: (stepper_x:position_max) + (bltouch:x_offset) - (parametric_parse:margin) if (bltouch:x_offset) < 0 else (stepper_x:position_max) - (parametric_parse:margin), (stepper_y:position_max) + (bltouch:y_offset) - (parametric_parse:margin) if (bltouch:y_offset) < 0 else (stepper_y:position_max) - (parametric_parse:margin)
+    # Bed Mesh: keep the probe inside the bed with a safety margin
+    bed_mesh.mesh_min: (bltouch:x_offset) + (parametric_parse:safe_margin) if (bltouch:x_offset) > 0 else (parametric_parse:safe_margin), (bltouch:y_offset) + (parametric_parse:safe_margin) if (bltouch:y_offset) > 0 else (parametric_parse:safe_margin)
+    bed_mesh.mesh_max: (stepper_x:position_max) + (bltouch:x_offset) - (parametric_parse:safe_margin) if (bltouch:x_offset) < 0 else (stepper_x:position_max) - (parametric_parse:safe_margin), (stepper_y:position_max) + (bltouch:y_offset) - (parametric_parse:safe_margin) if (bltouch:y_offset) < 0 else (stepper_y:position_max) - (parametric_parse:safe_margin)
 
-   # Screws Tilt Adjust: probe must be over the screws
-   screws_tilt_adjust.screw1: (parametric_parse:margin) - (bltouch:x_offset), (parametric_parse:margin) - (bltouch:y_offset)
-   screws_tilt_adjust.screw2: (stepper_x:position_max) - (parametric_parse:margin) - (bltouch:x_offset), (parametric_parse:margin) - (bltouch:y_offset)
-   screws_tilt_adjust.screw3: (stepper_x:position_max) - (parametric_parse:margin) - (bltouch:x_offset), (stepper_y:position_max) - (parametric_parse:margin) - (bltouch:y_offset)
-   screws_tilt_adjust.screw4: (parametric_parse:margin) - (bltouch:x_offset), (stepper_y:position_max) - (parametric_parse:margin) - (bltouch:y_offset)
+    # Screws Tilt Adjust: probe must be over the screws (nozzle pos = screw pos - probe offset)
+    screws_tilt_adjust.screw1: (parametric_parse:safe_margin) - (bltouch:x_offset), (parametric_parse:safe_margin) - (bltouch:y_offset)
+    screws_tilt_adjust.screw2: (stepper_x:position_max) - (parametric_parse:safe_margin) - (bltouch:x_offset), (parametric_parse:safe_margin) - (bltouch:y_offset)
+    screws_tilt_adjust.screw3: (stepper_x:position_max) - (parametric_parse:safe_margin) - (bltouch:x_offset), (stepper_y:position_max) - (parametric_parse:safe_margin) - (bltouch:y_offset)
+    screws_tilt_adjust.screw4: (parametric_parse:safe_margin) - (bltouch:x_offset), (stepper_y:position_max) - (parametric_parse:safe_margin) - (bltouch:y_offset)
 
-   # Bed Screws: nozzle directly over the screws
-   bed_screws.screw1: (parametric_parse:margin), (parametric_parse:margin)
-   bed_screws.screw2: (stepper_x:position_max) - (parametric_parse:margin), (parametric_parse:margin)
-   bed_screws.screw3: (stepper_x:position_max) - (parametric_parse:margin), (stepper_y:position_max) - (parametric_parse:margin)
-   bed_screws.screw4: (parametric_parse:margin), (stepper_y:position_max) - (parametric_parse:margin)
+    # Bed Screws: nozzle directly over screws
+    bed_screws.screw1: (parametric_parse:safe_margin), (parametric_parse:safe_margin)
+    bed_screws.screw2: (stepper_x:position_max) - (parametric_parse:safe_margin), (parametric_parse:safe_margin)
+    bed_screws.screw3: (stepper_x:position_max) - (parametric_parse:safe_margin), (stepper_y:position_max) - (parametric_parse:safe_margin)
+    bed_screws.screw4: (parametric_parse:safe_margin), (stepper_y:position_max) - (parametric_parse:safe_margin)
 ```
 
-## Troubleshooting
+In `klippy.log`, each substitution is logged:
 
-**`Option 'X' is not valid in section 'parametric_parse'`** — You are running an old version of `parametric_parse.py`. User-defined variables require the current version. Restart Klipper via `sudo systemctl restart klipper` after updating the file; the Mainsail/Fluidd RESTART button is not sufficient for Python module changes.
+```
+Parametric: safe_z_home:home_xy_position updated to 112.500, 152.500 (was 112.5, 112.5)
+Parametric: bed_mesh:mesh_min updated to 10.000, 10.000 (was 5, 5)
+```
 
-**Formula not resolving / `invalid syntax` error** — Make sure all section:option references use the full `(section:option)` syntax with parentheses. Bare references like `section:option` without parentheses are not resolved.
+## Notes and limitations
 
-**Changes to `parametric_parse.py` not taking effect** — Always restart the Klipper service from the command line, not from the web UI.
+- Formulas are evaluated with Python's `eval()` with builtins disabled. If you have write access to `printer.cfg`, you already have shell access — this is not an additional attack surface.
+- The module accesses `config.fileconfig` (Klipper's internal `ConfigParser`) directly. The public config API does not expose cross-section reads during `__init__`, so there is no alternative.
+- `position_min`/`position_max` are axis travel limits, not necessarily bed dimensions. Make sure your formulas reflect your actual machine geometry.
+- Variable names inside `[parametric_parse]` are lowercased by ConfigParser. `MyVar: 100` must be referenced as `(parametric_parse:myvar)`.
