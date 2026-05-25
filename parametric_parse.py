@@ -59,13 +59,16 @@ class ParametricParse:
                 resolved_str = self.VAR_RE.sub(self._lookup, formula_str)
                 
                 # Evaluate math
-                eval_results = []
-                for expr in resolved_str.split(','):
-                    # Using a restricted eval
-                    res = eval(expr.strip(), {"__builtins__": None}, {})
-                    eval_results.append("%.3f" % float(res))
+                rows = resolved_str.split('|')
+                row_results = []
+                for row in rows:
+                    eval_results = []
+                    for expr in row.split(','):
+                        res = eval(expr.strip(), {"__builtins__": None}, {})
+                        eval_results.append("%.3f" % float(res))
+                    row_results.append(", ".join(eval_results))
                 
-                final_val = ", ".join(eval_results)
+                final_val = "\n    ".join(row_results)
                 
                 # Inject into the live ConfigParser memory
                 if self.raw_cfg.has_section(target_s):

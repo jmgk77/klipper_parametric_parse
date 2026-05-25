@@ -64,7 +64,8 @@ Dot notation (`section.option`) is the write target. Colon notation (`section:op
 | `(section:option)` | Read reference to any value in your config |
 | `+  -  *  /` | Basic arithmetic |
 | `A if condition else B` | Conditional expression (Python ternary) |
-| `value1, value2` | Comma-separated output (for coordinate pairs) |
+| `value1, value2` | Comma-separated pair (X, Y coordinates) |
+| `row1 \| row2 \| row3` | Pipe-separated rows for multi-line list options (e.g. `z_positions`) |
 | `# comment` | Inline comments are supported |
 
 Injection is processed **line by line, in order**. A value set in one line is immediately available to subsequent lines:
@@ -105,6 +106,10 @@ inject:
     bed_screws.screw2: (stepper_x:position_max) - (parametric_parse:safe_margin), (parametric_parse:safe_margin)
     bed_screws.screw3: (stepper_x:position_max) - (parametric_parse:safe_margin), (stepper_y:position_max) - (parametric_parse:safe_margin)
     bed_screws.screw4: (parametric_parse:safe_margin), (stepper_y:position_max) - (parametric_parse:safe_margin)
+
+    # Z Tilt: multi-point list using pipe as row separator
+    # Each pipe-separated entry becomes one row in the ConfigParser list
+    z_tilt.z_positions: 0, (parametric_parse:safe_margin) | (stepper_x:position_max), (parametric_parse:safe_margin) | (stepper_x:position_max) / 2, (stepper_y:position_max) - (parametric_parse:safe_margin)
 ```
 
 In `klippy.log`, each substitution is logged:
